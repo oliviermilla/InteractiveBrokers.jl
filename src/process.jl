@@ -1,80 +1,41 @@
-import ...Bar,
-       ...ComboLeg,
-       ...CommissionReport,
-       ...ConditionType,
-       ...Contract,
-       ...ContractDescription,
-       ...ContractDetails,
-       ...DeltaNeutralContract,
-       ...Execution,
-       ...FamilyCode,
-       ...FaDataType,
-       ...IneligibilityReason,
-       ...MarketDataType,
-       ...Order,
-       ...OrderState,
-       ...SoftDollarTier,
-       ...TickAttrib,
-       ...TickAttribLast,
-       ...TickAttribBidAsk,
-       ...condition_map,
-       ...funddist,
-       ...fundtype,
-       ...ns
+using Base.Iterators: take
 
 import InteractiveBrokers
 
-"""
-    slurp(::Type{T}, it)
-
-Utility functions to read from an iterator `it` and convert to types `T`.
-"""
-slurp(::Type{T}, it) where {T<:Union{Bool,Int,Enum{Int32},Float64,String,Symbol}} = convert(T, pop(it))
-
-slurp(::Type{T}, it) where {T} = T(take(it, fieldcount(T))...)
-
-slurp(t, it) = slurp.(t, Ref(it))
-
-slurp!(x::T, idx, it) where {T} =
-  for i ∈ idx
-    setfield!(x, i, convert(fieldtype(T, i), pop(it)))
-  end
-
-"""
-    tagvalue2nt(n, it)
-
-Return a `NamedTuple` by popping `2n` elements from `it`:
-
-    ["tag1", "value1", "tag2", "value2", ...] -> (tag1="value1", tag2="value2", ...)
-"""
-tagvalue2nt(n, it) = (; (slurp(Symbol, it) => slurp(String, it) for _ ∈ 1:n)...)
-
-
-function unmask(T::Type{NamedTuple{M,NTuple{N,Bool}}}, mask) where {M,N}
-
-  a = digits(Bool, mask, base=2, pad=N)
-
-  length(a) == N || @error "unmask(): wrong attribs" T mask
-
-  T(a)
-end
-
-
-function fill_table(cols, n::Int, it, Tab::Type{<:Dict}=Dict)
-
-  dict = Tab{Symbol,Vector}()
-
-  for (k, T) ∈ pairs(cols)
-    symb = Symbol(k)
-    dict[symb] = Vector{T}(undef, n)
-  end
-
-  for r ∈ 1:n, c ∈ keys(dict)
-    dict[c][r] = pop(it)
-  end
-
-  dict
-end
+import ...AbstractCondition,
+  ...ComboLeg,
+  ...CommissionReport,
+  ...ConditionType,
+  ...Contract,
+  ...ContractDescription,
+  ...ContractDetails,
+  ...DeltaNeutralContract,
+  ...Execution,
+  ...FaDataType,
+  ...IneligibilityReason,
+  ...MarketDataType,
+  ...Order,
+  ...OrderAllocation,
+  ...OrderState,
+  ...SoftDollarTier,
+  ...TickAttrib,
+  ...TickAttribLast,
+  ...TickAttribBidAsk,
+  ...VBar,
+  ...VDepthMktDataDescription,
+  ...VFamilyCode,
+  ...VHistogramEntry,
+  ...VHistoricalSession,
+  ...HistoricalTick,
+  ...VHistoricalTickBidAsk,
+  ...VHistoricalTickLast,
+  ...VNewsProvider,
+  ...VPriceIncrement,
+  ...VSmartComponent,
+  ...condition_map,
+  ...funddist,
+  ...fundtype,
+  ...ns
 
 
 """
@@ -91,9 +52,9 @@ const process = Dict(
     ticktype::Int,
     price::Union{Float64,Nothing},
     size::Union{Float64,Nothing},
-    mask::Int = it
+    mask::TickAttrib = it
 
-    InteractiveBrokers.forward(w, :tickPrice, tickerId, InteractiveBrokers.TickTypes.TICK_TYPES(ticktype), price, size, unmask(TickAttrib, mask))
+    InteractiveBrokers.forward(w, :tickPrice, tickerId, InteractiveBrokers.TickTypes.TICK_TYPES(ticktype), price, size, mask)
   end,
 
   # TICK_SIZE
@@ -110,18 +71,27 @@ const process = Dict(
   3 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :orderStatus, slurp((Int, String, Float64, Float64, Float64, Int, Int, Float64, Int, String, Float64), it)...),
 
   # ERR_MSG
-  4 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-    err = InteractiveBrokers.IbkrErrorMessage(slurp((Int, Int, String, String), it)...)
+  4 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver)
+
+    id::Union{Int,Nothing},
+    errorCode::Union{Int,Nothing},
+    errorMsg::String,
+    adv::String = it
+
+    errorTime::Int = ver ≥ Client.ERROR_TIME ? it : 0
+    err = InteractiveBrokers.IbkrErrorMessage(id, errorTime, errorCode, errorMsg, adv)
+
     InteractiveBrokers.forward(w, :error, err)
   end,
 
   # OPEN_ORDER
   5 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    o = Order()
     c = Contract()
+    o = Order()
+    os = OrderState()
 
-    o.orderId = pop(it)
+    o.orderId = it
 
     slurp!(c, [1:8; 10:12], it)
 
@@ -139,15 +109,12 @@ const process = Dict(
         :discretionaryAmt,
         :goodAfterTime), it)
 
-    ver < Client.FA_PROFILE_DESUPPORT && pop(it) # Deprecated sharesAllocation
+    pop(it) # Deprecated sharesAllocation
 
     slurp!(o, (:faGroup,
         :faMethod,
-        :faPercentage), it)
-
-    pop(it) # Deprecated faProfile
-
-    slurp!(o, (:modelCode,
+        :faPercentage,
+        :modelCode,
         :goodTillDate,
         :rule80A,
         :percentOffset,
@@ -183,33 +150,21 @@ const process = Dict(
         :basisPoints,
         :basisPointsType), it)
 
-    c.comboLegsDescrip = pop(it)
+    c.comboLegsDescrip,
+    c.comboLegs = it
 
-    # ComboLegs
-    n::Int = pop(it)
-
-    for _ ∈ 1:n
-      push!(c.comboLegs, slurp(ComboLeg, it))
-    end
-
-    # OrderComboLeg
-    n = pop(it)
-    append!(o.orderComboLegs, take(it, n))
-
-    # SmartComboRouting
-    n = pop(it)
-    n > 0 && (o.smartComboRoutingParams = tagvalue2nt(n, it))
-
-    slurp!(o, (:scaleInitLevelSize,
+    slurp!(o, (:orderComboLegs,
+        :smartComboRoutingParams,
+        :scaleInitLevelSize,
         :scaleSubsLevelSize,
         :scalePriceIncrement), it)
 
     !isnothing(o.scalePriceIncrement) &&
       o.scalePriceIncrement > 0 && slurp!(o, 69:75, it) # :scalePriceAdjustValue -> :scaleRandomPercent
 
-    o.hedgeType = pop(it)
+    o.hedgeType = it
 
-    !isempty(o.hedgeType) && (o.hedgeParam = pop(it))
+    !isempty(o.hedgeType) && (o.hedgeParam = it)
 
     slurp!(o, (:optOutSmartRouting,
         :clearingAccount,
@@ -217,21 +172,22 @@ const process = Dict(
         :notHeld), it)
 
     # DeltaNeutralContract
-    slurp(Bool, it) && (c.deltaNeutralContract = slurp(DeltaNeutralContract, it))
+    convert(Bool, it) && (c.deltaNeutralContract = it)
 
     # AlgoStrategy
-    o.algoStrategy = pop(it)
+    o.algoStrategy = it
 
-    if !isempty(o.algoStrategy)
-      n = pop(it)
-      n > 0 && (o.algoParams = tagvalue2nt(n, it))
-    end
+    !isempty(o.algoStrategy) && (o.algoParams = it)
 
     o.solicited,
     o.whatIf = it
 
-    os = OrderState(take(it, 15)..., ns, ns)
+    slurp!(os, 1:14, it) # :status -> :commissionCurrency
 
+    ver ≥ Client.FULL_ORDER_PREVIEW_FIELDS &&
+      slurp!(os, 15:27, it) # :marginCurrency -> :orderAllocations
+
+    os.warningText,
     o.randomizeSize,
     o.randomizePrice = it
 
@@ -242,13 +198,9 @@ const process = Dict(
         :referenceExchangeId), it)
 
     # Conditions
-    n = pop(it)
+    o.conditions = it
 
-    if n > 0
-      for _ ∈ 1:n
-        push!(o.conditions, slurp(condition_map[slurp(ConditionType, it)], it))
-      end
-
+    if !isempty(o.conditions)
       o.conditionsIgnoreRth,
       o.conditionsCancelOrder = it
     end
@@ -260,11 +212,9 @@ const process = Dict(
         :adjustedStopPrice,
         :adjustedStopLimitPrice,
         :adjustedTrailingAmount,
-        :adjustableTrailingUnit), it)
-
-    o.softDollarTier = slurp(SoftDollarTier, it)
-
-    slurp!(o, (:cashQty,
+        :adjustableTrailingUnit,
+        :softDollarTier,
+        :cashQty,
         :dontUseAutoPriceForHedge,
         :isOmsContainer,
         :discretionaryUpToLimitPrice,
@@ -276,13 +226,17 @@ const process = Dict(
         :minCompeteSize,
         :competeAgainstBestOffset,
         :midOffsetAtWhole,
-        :midOffsetAtHalf), it)
+        :midOffsetAtHalf,
+        :customerAccount,
+        :professionalCustomer,
+        :bondAccruedInterest), it)
 
-    ver ≥ Client.CUSTOMER_ACCOUNT && (o.customerAccount = pop(it))
+    ver ≥ Client.INCLUDE_OVERNIGHT && (o.includeOvernight = it)
 
-          ver ≥ Client.PROFESSIONAL_CUSTOMER && (o.professionalCustomer = pop(it))
+    ver ≥ Client.CME_TAGGING_FIELDS_IN_OPEN_ORDER && slurp!(o, (:extOperator,
+        :manualOrderIndicator), it)
 
-          ver ≥ Client.BOND_ACCRUED_INTEREST && (o.bondAccruedInterest = pop(it))
+    ver ≥ Client.BOND_ACCRUED_INTEREST && (o.bondAccruedInterest = pop(it))
 
     InteractiveBrokers.forward(w, :openOrder, o.orderId, c, o, os)
   end,
@@ -297,27 +251,23 @@ const process = Dict(
 
     slurp!(c, [1:7; 9:12], it)
 
-    forwar(w, :updatePortfolio, c, collect(Float64, take(it, 6))..., slurp(String, it))
+    forward(w, :updatePortfolio, c, collect(Float64, take(it, 6))..., convert(String, it))
   end,
 
   # ACCT_UPDATE_TIME
-  8 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :updateAccountTime, slurp(String, it)),
+  8 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver) -> forward(w, :updateAccountTime, convert(String, it)),
 
   # NEXT_VALID_ID
-  9 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :nextValidId, slurp(Int, it)),
+  9 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver) -> forward(w, :nextValidId, convert(Int, it)),
 
   # CONTRACT_DATA
   10 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    reqId::Int = pop(it)
+    reqId::Int = it
 
     cd = ContractDetails()
 
-    slurp!(cd.contract, 2:4, it)
-
-    ver ≥ Client.LAST_TRADE_DATE && (cd.contract.lastTradeDate = pop(it))
-
-    slurp!(cd.contract, (5, 6, 8, 10, 11), it)
+    slurp!(cd.contract, (2, 3, 4, 18, 5, 6, 8, 10, 11), it)
 
     cd.marketName,
     cd.contract.tradingClass,
@@ -326,13 +276,11 @@ const process = Dict(
     cd.contract.multiplier = it
 
     slurp!(cd, 4:8, it)
-    cd.contract.primaryExchange = pop(it)
+    cd.contract.primaryExchange = it
     slurp!(cd, 9:17, it)
 
-    n::Int = pop(it)
-    n > 0 && (cd.secIdList = tagvalue2nt(n, it))
-
-    slurp!(cd, (:aggGroup,
+    slurp!(cd, (:secIdList,
+        :aggGroup,
         :underSymbol,
         :underSecType,
         :marketRuleIds,
@@ -342,21 +290,15 @@ const process = Dict(
         :sizeIncrement,
         :suggestedSizeIncrement), it)
 
-    if ver ≥ Client.FUND_DATA_FIELDS && cd.contract.secType == "FUND"
+    if cd.contract.secType == "FUND"
 
       slurp!(cd, 44:58, it)
 
-            cd.fundDistributionPolicyIndicator = funddist(slurp(String, it))
-            cd.fundAssetType = fundtype(slurp(String, it))
-          end
+      cd.fundDistributionPolicyIndicator = funddist(convert(String, it))
+      cd.fundAssetType = fundtype(convert(String, it))
+    end
 
-          if ver ≥ Client.INELIGIBILITY_REASONS
-            n = pop(it)
-
-            for _ ∈ 1:n
-              push!(cd.ineligibilityReasonList, slurp(IneligibilityReason, it))
-            end
-          end
+    cd.ineligibilityReasonList = it
 
     InteractiveBrokers.forward(w, :contractDetails, reqId, cd)
   end,
@@ -365,16 +307,12 @@ const process = Dict(
   11 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
     reqId::Int,
-    orderId = it
+    orderId::Union{Int,Nothing} = it
 
     c = Contract()
     slurp!(c, [1:8; 10:12], it)
 
-    args = collect(take(it, 17))  # Must materialize
-
-    e = Execution(orderId,
-      args...,
-      ver ≥ Client.PENDING_PRICE_REVISION ? pop(it) : false)
+    e = Execution(orderId, take(it, 18)...)
 
     InteractiveBrokers.forward(w, :execDetails, reqId, c, e)
   end,
@@ -389,7 +327,7 @@ const process = Dict(
   14 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :updateNewsBulletin, slurp((Int, Int, String, String), it)...),
 
   # MANAGED_ACCTS
-  15 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :managedAccounts, slurp(String, it)),
+  15 => (it, w, ver) -> InteractiveBrokers.forward(w, :managedAccounts, convert(String, it)),
 
   # RECEIVE_FA
   16 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :receiveFA, slurp((FaDataType, String), it)...),
@@ -397,24 +335,22 @@ const process = Dict(
   # HISTORICAL_DATA
   17 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    reqId::Int = pop(it)
+    reqId::Int = it
 
-    pop(it) # Ignore startDate
-    pop(it) # Ignore endDate
+    if ver < Client.HISTORICAL_DATA_END
+      pop(it) # Ignore startDate
+      pop(it) # Ignore endDate
+    end
 
-    n::Int = pop(it)
+    bars::VBar = it
 
-    df = fill_table((time=String, open=Float64, high=Float64, low=Float64,
-        close=Float64, volume=Float64, wap=Float64, count=Int),
-      n, it, Tab)
-
-    InteractiveBrokers.forward(w, :historicalData, reqId, df)
+    InteractiveBrokers.forward(w, :historicalData, reqId, bars)
   end,
 
   # BOND_CONTRACT_DATA
   18 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    reqId::Int = pop(it)
+    reqId::Int = it
 
     cd = ContractDetails()
 
@@ -445,14 +381,14 @@ const process = Dict(
         :nextOptionType,
         :nextOptionPartial,
         :notes,
-        :longName,
-        :evRule,
-        :evMultiplier), it)
+        :longName), it)
 
-    n::Int = pop(it)
-    n > 0 && (cd.secIdList = tagvalue2nt(n, it))
+    ver ≥ Client.BOND_TRADING_HOURS && slurp!(cd, 13:15, it) # :timeZoneId -> :liquidHours
 
-    slurp!(cd, (:aggGroup,
+    slurp!(cd, 16:17, it) # :evRule -> :evMultiplier
+
+    slurp!(cd, (:secIdList,
+        :aggGroup,
         :marketRuleIds,
         :minSize,
         :sizeIncrement,
@@ -462,7 +398,7 @@ const process = Dict(
   end,
 
   # SCANNER_PARAMETERS
-  19 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :scannerParameters, slurp(String, it)),
+  19 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver) -> forward(w, :scannerParameters, convert(String, it)),
 
   # SCANNER_DATA
   20 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
@@ -479,7 +415,7 @@ const process = Dict(
 
     for i ∈ 1:n
 
-      rank[i] = pop(it)
+      rank[i] = it
 
       slurp!(cd[i].contract, [1:6; 8; 10; 11], it)
 
@@ -542,7 +478,7 @@ const process = Dict(
   end,
 
   # CURRENT_TIME
-  49 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :currentTime, slurp(Int, it)),
+  49 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :currentTime, convert(Int, it)),
 
   # REAL_TIME_BARS
   50 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :realtimeBar, slurp((Int, Int, Float64, Float64, Float64, Float64, Float64, Float64, Int), it)...),
@@ -551,43 +487,43 @@ const process = Dict(
   51 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :fundamentalData, slurp((Int, String), it)...),
 
   # CONTRACT_DATA_END
-  52 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :contractDetailsEnd, slurp(Int, it)),
+  52 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :contractDetailsEnd, convert(Int, it)),
 
   # OPEN_ORDER_END
   53 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :openOrderEnd),
 
   # ACCT_DOWNLOAD_END
-  54 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountDownloadEnd, slurp(String, it)),
+  54 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountDownloadEnd, convert(String, it)),
 
   # EXECUTION_DATA_END
-  55 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :execDetailsEnd, slurp(Int, it)),
+  55 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :execDetailsEnd, convert(Int, it)),
 
   # DELTA_NEUTRAL_VALIDATION
   56 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    reqId::Int = pop(it)
+    reqId::Int = it
 
-    InteractiveBrokers.forward(w, :deltaNeutralValidation, reqId, slurp(DeltaNeutralContract, it))
+    InteractiveBrokers.forward(w, :deltaNeutralValidation, reqId, slurp((Int, DeltaNeutralContract), it)...)
   end,
 
   # TICK_SNAPSHOT_END
-  57 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :tickSnapshotEnd, slurp(Int, it)),
+  57 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :tickSnapshotEnd, convert(Int, it)),
 
   # MARKET_DATA_TYPE
   58 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :marketDataType, slurp((Int, MarketDataType), it)...),
 
   # COMMISSION_REPORT
-  59 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :commissionReport, slurp(CommissionReport, it)),
+  59 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :commissionReport, convert(CommissionReport, it)),
 
   # POSITION_DATA
   61 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    account::String = pop(it)
+    account::String = it
 
     c = Contract()
     slurp!(c, [1:8; 10:12], it)
 
-    InteractiveBrokers.forward(w, :position, account, c, collect(Float64, take(it, 2))...)
+    InteractiveBrokers.forward(w, :position, account, c, slurp((Float64, Float64), it)...)
   end,
 
   # POSITION_END
@@ -596,16 +532,16 @@ const process = Dict(
   # ACCOUNT_SUMMARY
   63 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    reqId::Int = pop(it)
+    reqId::Int = it
 
     InteractiveBrokers.forward(w, :accountSummary, reqId, collect(String, take(it, 4))...)
   end,
 
   # ACCOUNT_SUMMARY_END
-  64 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountSummaryEnd, slurp(Int, it)),
+  64 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountSummaryEnd, convert(Int, it)),
 
   # VERIFY_MESSAGE_API
-  65 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :verifyMessageAPI, slurp(String, it)),
+  65 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :verifyMessageAPI, convert(String, it)),
 
   # VERIFY_COMPLETED
   66 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :verifyCompleted, slurp((Bool, String), it)...),
@@ -617,7 +553,7 @@ const process = Dict(
   68 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :displayGroupUpdated, slurp((Int, String), it)...),
 
   # VERIFY_AND_AUTH_MESSAGE_API
-  69 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :verifyAndAuthMessageAPI, collect(String, take(it, 2))...),
+  69 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :verifyAndAuthMessageAPI, slurp((String, String), it)...),
 
   # VERIFY_AND_AUTH_COMPLETED
   70 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :verifyAndAuthCompleted, slurp((Bool, String), it)...),
@@ -639,47 +575,33 @@ const process = Dict(
   end,
 
   # POSITION_MULTI_END
-  72 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :positionMultiEnd, slurp(Int, it)),
+  72 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :positionMultiEnd, convert(Int, it)),
 
   # ACCOUNT_UPDATE_MULTI
-  73 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountUpdateMulti, slurp(Int, it), collect(String, take(it, 5))...),
+  73 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountUpdateMulti, convert(Int, it), collect(String, take(it, 5))...),
 
   # ACCOUNT_UPDATE_MULTI_END
-  74 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountUpdateMultiEnd, slurp(Int, it)),
+  74 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :accountUpdateMultiEnd, convert(Int, it)),
 
   # SECURITY_DEFINITION_OPTION_PARAMETER
   75 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
     args = slurp((Int, String, Int, String, String), it)
 
-    ne::Int = pop(it)
-    expirations = collect(String, take(it, ne))
-
-    ns::Int = pop(it)
-    strikes = collect(Float64, take(it, ns))
+    expirations::Vector{String},
+    strikes::Vector{Float64} = it
 
     InteractiveBrokers.forward(w, :securityDefinitionOptionalParameter, args..., expirations, strikes)
   end,
 
   # SECURITY_DEFINITION_OPTION_PARAMETER_END
-  76 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :securityDefinitionOptionalParameterEnd, slurp(Int, it)),
+  76 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :securityDefinitionOptionalParameterEnd, convert(Int, it)),
 
   # SOFT_DOLLAR_TIERS
-  77 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-
-    reqId::Int,
-    n::Int = it
-
-    InteractiveBrokers.forward(w, :softDollarTiers, reqId, [slurp(SoftDollarTier, it) for _ ∈ 1:n])
-  end,
+  77 => (it, w, ver) -> forward(w, :softDollarTiers, slurp((Int, Vector{SoftDollarTier}), it)...),
 
   # FAMILY_CODES
-  78 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-
-    n::Int = pop(it)
-
-    InteractiveBrokers.forward(w, :familyCodes, [slurp(FamilyCode, it) for _ ∈ 1:n])
-  end,
+  78 => (it, w, ver) -> InteractiveBrokers.forward(w, :familyCodes, convert(VFamilyCode, it)),
 
   # SYMBOL_SAMPLES
   79 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
@@ -697,12 +619,12 @@ const process = Dict(
           :primaryExchange,
           :currency), it)
 
-      nd::Int = pop(it)
+      nd::Int = it
 
       dst = collect(String, take(it, nd))
 
-      slurp!(c, (:description,
-          :issuerId), it)
+      c.description,
+      c.issuerId = it
 
       ContractDescription(c, dst)
     end
@@ -711,30 +633,13 @@ const process = Dict(
   end,
 
   # MKT_DEPTH_EXCHANGES
-  80 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-
-    n::Int = pop(it)
-
-    df = fill_table((exchange=String, secType=String, listingExch=String,
-        serviceDataType=String, aggGroup=Union{Int,Nothing}),
-      n, it, Tab)
-
-    InteractiveBrokers.forward(w, :mktDepthExchanges, df)
-  end,
+  80 => (it, w, ver) -> InteractiveBrokers.forward(w, :mktDepthExchanges, convert(VDepthMktDataDescription, it)),
 
   # TICK_REQ_PARAMS
   81 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :tickReqParams, slurp((Int, Float64, String, Int), it)...),
 
   # SMART_COMPONENTS
-  82 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-
-    reqId::Int,
-    n::Int = it
-
-    df = fill_table((bit=Int, exchange=String, exchangeLetter=String), n, it, Tab)
-
-    InteractiveBrokers.forward(w, :smartComponents, reqId, df)
-  end,
+  82 => (it, w, ver) -> InteractiveBrokers.forward(w, :smartComponents(slurp((Int, VSmartComponent), it)...)),
 
   # NEWS_ARTICLE
   83 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :newsArticle, slurp((Int, Int, String), it)...),
@@ -748,14 +653,7 @@ const process = Dict(
   end,
 
   # NEWS_PROVIDERS
-  85 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-
-    n::Int = pop(it)
-
-    df = fill_table((providerCode=String, providerName=String), n, it)
-
-    InteractiveBrokers.forward(w, :newsProviders, df)
-  end,
+  85 => (it, w, ver) -> InteractiveBrokers.forward(w, :newsProviders, convert(VNewsProvider, it)),
 
   # HISTORICAL_NEWS
   86 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :historicalNews, slurp((Int, String, String, String, String), it)...),
@@ -767,22 +665,23 @@ const process = Dict(
   88 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :headTimestamp, slurp((Int, String), it)...),
 
   # HISTOGRAM_DATA
-  89 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-
-    reqId::Int,
-    n::Int = it
-
-    df = fill_table((price=Float64, size=Float64), n, it)
-
-    InteractiveBrokers.forward(w, :histogramData, reqId, df)
-  end,
+  89 => (it, w, ver) -> InteractiveBrokers.forward(w, histogramData(slurp((Int, VHistogramEntry), it)...)),
 
   # HISTORICAL_DATA_UPDATE
   90 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    reqId::Int = pop(it)
+    reqId::Int,
+    count::Int,
+    time::String,
+    open::Float64,
+    close::Float64,
+    high::Float64,
+    low::Float64,
+    wap::Float64,
+    volume::Float64 = it
 
-    InteractiveBrokers.forward(w, :historicalDataUpdate, reqId, slurp(Bar, it))
+    InteractiveBrokers.forward(w, :historicalDataUpdate, reqId, (; time, open, high, low, close,
+      volume, wap, count))
   end,
 
   # REROUTE_MKT_DATA_REQ
@@ -792,15 +691,7 @@ const process = Dict(
   92 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :rerouteMktDepthReq, slurp((Int, Int, String), it)...),
 
   # MARKET_RULE
-  93 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
-
-    marketRuleId::Int,
-    n::Int = it
-
-    df = fill_table((lowEdge=Float64, increment=Float64), n, it)
-
-    InteractiveBrokers.forward(w, :marketRule, marketRuleId, df)
-  end,
+  93 => (it, w, ver) -> InteractiveBrokers.forward(w, :marketRule, slurp((Int, VPriceIncrement), it)...),
 
   # PNL
   94 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
@@ -830,49 +721,31 @@ const process = Dict(
   96 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
     reqId::Int,
-    n::Int = it
+    ticks::Vector{@NamedTuple{time::Int, ignore::Int, price::Float64, size::Float64}},
+    done::Bool = it
 
-    df = fill_table((time=Int, ignore=Int, price=Float64, size=Float64), n, it)
 
-    select!(df, Not(:ignore))
-
-    done::Bool = pop(it)
-
-    InteractiveBrokers.forward(w, :historicalTicks, reqId, df, done)
+    InteractiveBrokers.forward(w, :historicalTicks, reqId, HistoricalTick.(ticks), done)
   end,
 
   # HISTORICAL_TICKS_BID_ASK
   97 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
     reqId::Int,
-    n::Int = it
+    ticks::VHistoricalTickBidAsk,
+    done::Bool = it
 
-    df = fill_table((time=Int, mask=Int, priceBid=Float64, priceAsk=Float64,
-        sizeBid=Float64, sizeAsk=Float64),
-      n, it)
-
-    # TODO: Unmask df.mask
-
-    done::Bool = pop(it)
-
-    forwrd(w, :historicalTicksBidAsk, reqId, df, done)
+    InteractiveBrokers.forward(w, :historicalTicksBidAsk, reqId, ticks, done)
   end,
 
   # HISTORICAL_TICKS_LAST
   98 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
     reqId::Int,
-    n::Int = it
+    ticks::VHistoricalTickLast,
+    done::Bool = it
 
-    df = fill_table((time=Int, mask=Int, price=Float64, size=Float64,
-        exchange=String, specialConditions=String),
-      n, it)
-
-    # TODO: Unmask df.mask
-
-    done::Bool = pop(it)
-
-    InteractiveBrokers.forward(w, :historicalTicksLast, reqId, df, done)
+    InteractiveBrokers.forward(w, :historicalTicksLast, reqId, ticks, done)
   end,
 
   # TICK_BY_TICK
@@ -882,17 +755,15 @@ const process = Dict(
     ticktype::Int,
     time::Int = it
 
-    local mask::Int  # To avoid "multiple type declarations" error
-
     if ticktype ∈ (1, 2)
 
       price::Float64,
       size::Float64,
-      mask,
+      mask1::TickAttribLast,
       exchange::String,
       specialConditions::String = it
 
-      InteractiveBrokers.forward(w, :tickByTickAllLast, reqId, ticktype, time, price, size, unmask(TickAttribLast, mask), exchange, specialConditions)
+      InteractiveBrokers.forward(w, :tickByTickAllLast, reqId, ticktype, time, price, size, mask1, exchange, specialConditions)
 
     elseif ticktype == 3
 
@@ -900,13 +771,13 @@ const process = Dict(
       askPrice::Float64,
       bidSize::Float64,
       askSize::Float64,
-      mask = it
+      mask2::TickAttribBidAsk = it
 
-      InteractiveBrokers.forward(w, :tickByTickBidAsk, reqId, time, bidPrice, askPrice, bidSize, askSize, unmask(TickAttribBidAsk, mask))
+      InteractiveBrokers.forward(w, :tickByTickBidAsk, reqId, time, bidPrice, askPrice, bidSize, askSize, mask2)
 
     elseif ticktype == 4
 
-      InteractiveBrokers.forward(w, :tickByTickMidPoint, reqId, time, slurp(Float64, it))
+      InteractiveBrokers.forward(w, :tickByTickMidPoint, reqId, time, convert(Float64, it))
 
     else
       @warn "TICK_BY_TICK: unknown ticktype" T = ticktype
@@ -919,8 +790,10 @@ const process = Dict(
   # COMPLETED_ORDER
   101 => function (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict)
 
-    o = Order()
     c = Contract()
+    o = Order()
+    os = OrderState()
+
 
     slurp!(c, [1:8; 10:12], it)
 
@@ -938,11 +811,8 @@ const process = Dict(
         :goodAfterTime,
         :faGroup,
         :faMethod,
-        :faPercentage), it)
-
-    ver < Client.FA_PROFILE_DESUPPORT && pop(it) # Deprecated faProfile
-
-    slurp!(o, (:modelCode,
+        :faPercentage,
+        :modelCode,
         :goodTillDate,
         :rule80A,
         :percentOffset,
@@ -969,51 +839,36 @@ const process = Dict(
         :trailStopPrice,
         :trailingPercent), it)
 
-    c.comboLegsDescrip = pop(it)
+    c.comboLegsDescrip,
+    c.comboLegs = it
 
-    # ComboLegs
-    n::Int = pop(it)
-
-    for _ ∈ 1:n
-      push!(c.comboLegs, slurp(ComboLeg, it))
-    end
-
-    # OrderComboLeg
-    n = pop(it)
-    append!(o.orderComboLegs, take(it, n))
-
-    # SmartComboRouting
-    n = pop(it)
-    n > 0 && (o.smartComboRoutingParams = tagvalue2nt(n, it))
-
-    slurp!(o, (:scaleInitLevelSize,
+    slurp!(o, (:orderComboLegs,
+        :smartComboRoutingParams,
+        :scaleInitLevelSize,
         :scaleSubsLevelSize,
         :scalePriceIncrement), it)
 
     !isnothing(o.scalePriceIncrement) &&
       o.scalePriceIncrement > 0 && slurp!(o, 69:75, it) # :scalePriceAdjustValue -> :scaleRandomPercent
 
-    o.hedgeType = pop(it)
+    o.hedgeType = it
 
-    !isempty(o.hedgeType) && (o.hedgeParam = pop(it))
+    !isempty(o.hedgeType) && (o.hedgeParam = it)
 
     slurp!(o, (:clearingAccount,
         :clearingIntent,
         :notHeld), it)
 
     # DeltaNeutralContract
-    slurp(Bool, it) && (c.deltaNeutralContract = slurp(DeltaNeutralContract, it))
+    convert(Bool, it) && (c.deltaNeutralContract = it)
 
     # AlgoStrategy
-    o.algoStrategy = pop(it)
+    o.algoStrategy = it
 
-    if !isempty(o.algoStrategy)
-      n = pop(it)
-      n > 0 && (o.algoParams = tagvalue2nt(n, it))
-    end
+    !isempty(o.algoStrategy) && (o.algoParams = it)
 
     o.solicited,
-    ostatus::String,     # OrderState.status
+    os.status,
     o.randomizeSize,
     o.randomizePrice = it
 
@@ -1024,13 +879,9 @@ const process = Dict(
         :referenceExchangeId), it)
 
     # Conditions
-    n = pop(it)
+    o.conditions = it
 
-    if n > 0
-      for _ ∈ 1:n
-        push!(o.conditions, slurp(condition_map[slurp(ConditionType, it)], it))
-      end
-
+    if !isempty(o.conditions)
       o.conditionsIgnoreRth,
       o.conditionsCancelOrder = it
     end
@@ -1043,17 +894,16 @@ const process = Dict(
 
     slurp!(o, 118:125, it) # :autoCancelDate -> :parentPermId
 
-    os = OrderState(ostatus, fill(ns, 9)..., fill(nothing, 3)..., ns, ns, take(it, 2)...)
+    os.completedTime,
+    os.completedStatus = it
 
     slurp!(o, (:minTradeQty,
         :minCompeteSize,
         :competeAgainstBestOffset,
         :midOffsetAtWhole,
-        :midOffsetAtHalf), it)
-
-    ver ≥ Client.CUSTOMER_ACCOUNT && (o.customerAccount = pop(it))
-
-    ver ≥ Client.PROFESSIONAL_CUSTOMER && (o.professionalCustomer = pop(it))
+        :midOffsetAtHalf,
+        :customerAccount,
+        :professionalCustomer), it)
 
     InteractiveBrokers.forward(w, :completedOrder, c, o, os)
   end,
@@ -1077,13 +927,17 @@ const process = Dict(
     startDateTime::String,
     endDateTime::String,
     timeZone::String,
-    n::Int = it
+    sessions::VHistoricalSession = it
 
-    df = fill_table((startDateTime=String, endDateTime=String, refDate=String), n, it)
-
-    InteractiveBrokers.forward(w, :historicalSchedule, reqId, startDateTime, endDateTime, timeZone, df)
+    InteractiveBrokers.forward(w, :historicalSchedule, reqId, startDateTime, endDateTime, timeZone, sessions)
   end,
 
   # USER_INFO
-  107 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :userInfo, slurp((Int, String), it)...)
+  107 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :userInfo, slurp((Int, String), it)...),
+
+  # HISTORICAL_DATA_END
+  108 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :historicalDataEnd, slurp((Int, String, String), it)...),
+
+  # CURRENT_TIME_IN_MILLIS
+  109 => (it, w, ver) -> InteractiveBrokers.forward(w, :currentTimeInMillis, convert(Int, it))
 )
