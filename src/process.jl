@@ -909,7 +909,7 @@ const process = Dict(
 
           ver ≥ Client.SUBMITTER && (o.submitter = it)
 
-          InteractiveBrokers.forward(w, :completedOrder, c, o, os)
+    InteractiveBrokers.forward(w, :completedOrder, c, o, os)
   end,
 
   # COMPLETED_ORDERS_END
