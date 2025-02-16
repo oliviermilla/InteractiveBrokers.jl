@@ -238,8 +238,10 @@ const process = Dict(
 
           ver ≥ Client.SUBMITTER && (o.submitter = it)
 
+          ver ≥ Client.IMBALANCE_ONLY && (o.imbalanceOnly = it)
+
           InteractiveBrokers.forward(w, :openOrder, o.orderId, c, o, os)
-        end,
+  end,
 
   # ACCT_VALUE
   6 => (it, w::InteractiveBrokers.AbstractIBCallbackWrapper, ver, Tab=Dict) -> InteractiveBrokers.forward(w, :updateAccountValue, collect(String, take(it, 4))...),
