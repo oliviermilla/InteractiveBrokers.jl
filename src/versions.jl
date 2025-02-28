@@ -11,5 +11,7 @@
   FULL_ORDER_PREVIEW_FIELDS          = 195
   HISTORICAL_DATA_END                = 196
   CURRENT_TIME_IN_MILLIS             = 197
+  SUBMITTER                          = 198
+  IMBALANCE_ONLY                     = 199
 
 end
