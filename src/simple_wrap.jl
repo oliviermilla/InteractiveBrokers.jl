@@ -287,6 +287,16 @@ function simple_wrap()
       completedOrdersEnd= () -> println("completedOrdersEnd"),
   
       replaceFAEnd= (reqId::Int, text::String) -> println("replaceFAEnd: $reqId $text"),
+
+      wshMetaData= function(reqId::Int, dataJson::String)
+        d[:wshmeta] = dataJson
+        println("wshMetaData: $reqId")
+      end,
+
+      wshEventData= function(reqId::Int, dataJson::String)
+         d[:wshevents] = dataJson
+         println("wshEventData: $reqId")
+       end,
   
       wshMetaData= (reqId::Int, dataJson::String) -> println("wshMetaData: $reqId $dataJson"),
   
