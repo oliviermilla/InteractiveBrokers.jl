@@ -298,10 +298,6 @@ function simple_wrap()
          println("wshEventData: $reqId")
        end,
   
-      wshMetaData= (reqId::Int, dataJson::String) -> println("wshMetaData: $reqId $dataJson"),
-  
-      wshEventData= (reqId::Int, dataJson::String) -> println("wshEventData: $reqId $dataJson"),
-  
       historicalSchedule= function(reqId::Int, startDateTime::String, endDateTime::String, timeZone::String, sessions::VHistoricalSession)
                             d[:schedule] = sessions
                             println("historicalSchedule: $reqId $startDateTime $endDateTime $timeZone")
