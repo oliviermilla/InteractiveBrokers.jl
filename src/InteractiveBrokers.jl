@@ -2,6 +2,13 @@ module InteractiveBrokers
 
 using Sockets
 
+# Load ProtoLite
+include("../ProtoLite.jl/src/ProtoLite.jl"); using .ProtoLite: ProtoLite as PB
+
+# Read proto files
+PB.readprotodir(joinpath(@__DIR__, "..", "proto"))
+
+
 include("client.jl")
 include("enums.jl")
 include("Errors.jl")
@@ -12,6 +19,7 @@ include("types_condition.jl")
 include("types_mutable.jl")
 include("types_private.jl")
 include("wrapper.jl")
+include("protoutils.jl")
 include("reader.jl")          ; using .Reader: check_all, start_reader
 include("utils.jl")
 include("TickTypes.jl")    ; using .TickTypes: tickname
@@ -53,9 +61,7 @@ function connect(;host::IPAddr=getalladdrinfo("localhost")[1], port::Int=4002, c
   # Handshake
   Client.write_one(s, buf)
 
-  msg = Reader.read_msg(s)
-
-  v, t = Reader.decode_init(msg)
+  v, t = Client.read_init(s)
 
   @info "connected" v t
 

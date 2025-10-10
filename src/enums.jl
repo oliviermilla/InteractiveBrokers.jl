@@ -18,9 +18,20 @@ funddist(v) = v == "N" ? "Accumulation Fund" :
 fundtype(v) = v == "000" ? "Others" :
               v == "001" ? "Money Market" :
               v == "002" ? "Fixed Income" :
-              v == "003" ? "Multi-asset" :
-              v == "004" ? "Equity" :
-              v == "005" ? "Sector" :
-              v == "006" ? "Guaranteed" :
-              v == "007" ? "Alternative" :
-              "None"
+              v == "003" ? "Multi-asset"  :
+              v == "004" ? "Equity"       :
+              v == "005" ? "Sector"       :
+              v == "006" ? "Guaranteed"   :
+              v == "007" ? "Alternative"  :
+                           "None"
+
+optexercisetype(v) = v ==  -1 ? "None" :
+                     v ==   1 ? "Exercise" :
+                     v ==   2 ? "Lapse"    :
+                     v ==   3 ? "DoNothing" :
+                     v == 100 ? "Assigned"  :
+                     v == 101 ? "AutoexerciseClearing" :
+                     v == 102 ? "Expired"              :
+                     v == 103 ? "Netting"              :
+                     v == 200 ? "AutoexerciseTrading"  :
+                                (@warn("unknown type", v); "None")
