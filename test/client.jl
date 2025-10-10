@@ -1,14 +1,11 @@
 @testset "Client" begin
 
-  @test sizeof(Jib.Client.HEADTYPE) == 4
-  @test sizeof(Jib.Client.RAWIDTYPE) == 4
+  @test sizeof(InteractiveBrokers.Client.HEADTYPE) == 4
+  @test sizeof(InteractiveBrokers.Client.RAWIDTYPE) == 4
 
   @test InteractiveBrokers.Client.MAX_LEN < typemax(InteractiveBrokers.Client.HEADTYPE)
 
-  # isascii
-  @test Jib.Client.isascii([0x80, 0x79, 0x79], 1)
-
-  @test !Jib.Client.isascii([0x80, 0x80, 0x79], 1)
+ 
 
   # buffer
   buf = InteractiveBrokers.Client.buffer(true)
@@ -26,15 +23,15 @@
   @test String(take!(bo)) == InteractiveBrokers.Client.API_SIGN * "\0\0\0\x03ABC"
 
   # Round trip
-  buf = Jib.Client.buffer(false)
-  write(buf, hton(Jib.Client.RAWIDTYPE(123)))
+  buf = InteractiveBrokers.Client.buffer(false)
+  write(buf, hton(InteractiveBrokers.Client.RAWIDTYPE(123)))
   write(buf, "ABC")
 
   bo = IOBuffer()
   InteractiveBrokers.Client.write_one(bo, buf)
 
   seekstart(bo) # Rewind
-  id, m = Jib.Client.read_one(bo)
+  id, m = InteractiveBrokers.Client.read_one(bo)
 
   @test id == 123
   @test String(m) == "ABC"

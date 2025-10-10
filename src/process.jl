@@ -1,3 +1,5 @@
+import InteractiveBrokers
+
 import ...CommissionReport,
        ...Contract,
        ...ContractDescription,
@@ -56,7 +58,7 @@ const process = Dict(
     transform(m -> TickAttrib(digits(Bool, m, base=2, pad=3)),
               pb, :attrMask)
 
-    w.tickPrice(splat1(pb; price=nothing, size=nothing)...)
+    InteractiveBrokers.forward(w, :tickPrice, splat1(pb; price=nothing, size=nothing)...)
   end,
 
   # TICK_SIZE
@@ -67,7 +69,7 @@ const process = Dict(
     transform(tickname, pb, :tickType)
     todouble(pb, :value)
 
-    w.tickSize(splat1(pb)...)
+    InteractiveBrokers.forward(w, :tickSize, splat1(pb)...)
   end,
 
   # ORDER_STATUS
@@ -78,7 +80,7 @@ const process = Dict(
     todouble(pb, :filled)
     todouble(pb, :remaining)
 
-    w.orderStatus(splat1(pb; whyHeld=ns)...)
+    InteractiveBrokers.forward(w, :orderStatus, splat1(pb; whyHeld=ns)...)
   end,
 
   # ERR_MSG
@@ -86,7 +88,7 @@ const process = Dict(
 
     pb = PB.deserialize(:Error, msg)
 
-    w.error(splat1(pb; errorCode=nothing, advancedOrderRejectJson=ns)...)
+    InteractiveBrokers.forward(w, :error, splat1(pb; errorCode=nothing, advancedOrderRejectJson=ns)...)
   end,
 
   # OPEN_ORDER
@@ -135,7 +137,7 @@ const process = Dict(
       end
     end
 
-    w.openOrder(oid, contract, order, orderState)
+    InteractiveBrokers.forward(w, :openOrder, oid, contract, order, orderState)
   end,
 
   # ACCT_VALUE
@@ -143,7 +145,7 @@ const process = Dict(
 
     pb = PB.deserialize(:AccountValue, msg)
 
-    w.updateAccountValue(splat1(pb; currency=ns)...)
+    InteractiveBrokers.forward(w, :updateAccountValue, splat1(pb; currency=ns)...)
   end,
 
   # PORTFOLIO_VALUE
@@ -153,7 +155,7 @@ const process = Dict(
 
     todouble(pb, :position)
 
-    w.updatePortfolio(splat1(pb; unrealizedPNL=0.)...)
+    InteractiveBrokers.forward(w, :updatePortfolio, splat1(pb; unrealizedPNL=0.)...)
   end,
 
   # ACCT_UPDATE_TIME
@@ -161,11 +163,11 @@ const process = Dict(
 
     pb = PB.deserialize(:SingleString, msg)
 
-    w.updateAccountTime(pb[:value])
+    InteractiveBrokers.forward(w, :updateAccountTime, pb[:value])
   end,
 
   # NEXT_VALID_ID
-  209 => (msg, w, ver) -> w.nextValidId(PB.deserialize(:SingleInt32, msg)[:value]),
+  209 => (msg, w, ver) -> InteractiveBrokers.forward(w, :nextValidId, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # CONTRACT_DATA
   210 => function(msg, w, ver)
@@ -183,7 +185,7 @@ const process = Dict(
 
     contractDetails.contract = contract
 
-    w.contractDetails(reqId, contractDetails)
+    InteractiveBrokers.forward(w, :contractDetails, reqId, contractDetails)
   end,
 
   # EXECUTION_DATA
@@ -204,7 +206,7 @@ const process = Dict(
                                     pendingPriceRevision=false,
                                     submitter=ns)...)
 
-    w.execDetails(pb[:reqId], convert(Contract, pb[:contract]), execution)
+    InteractiveBrokers.forward(w, :execDetails, pb[:reqId], convert(Contract, pb[:contract]), execution)
   end,
 
   # MARKET_DEPTH
@@ -216,7 +218,7 @@ const process = Dict(
 
     todouble(md, :size)
 
-    w.updateMktDepth(pb[:reqId], splat1(md, (:position,
+    InteractiveBrokers.forward(w, :updateMktDepth, pb[:reqId], splat1(md, (:position,
                                              :operation,
                                              :side,
                                              :price,
@@ -232,7 +234,7 @@ const process = Dict(
 
     todouble(md, :size)
 
-    w.updateMktDepthL2(pb[:reqId], splat1(md, (:position,
+    InteractiveBrokers.forward(w, :updateMktDepthL2, pb[:reqId], splat1(md, (:position,
                                                :marketMaker,
                                                :operation,
                                                :side,
@@ -246,18 +248,18 @@ const process = Dict(
 
     pb = PB.deserialize(:NewsBulletin, msg)
 
-    w.updateNewsBulletin(splat1(pb)...)
+    InteractiveBrokers.forward(w, :updateNewsBulletin, splat1(pb)...)
   end,
 
   # MANAGED_ACCTS
-  215 => (msg, w, ver) -> w.managedAccounts(PB.deserialize(:SingleString, msg)[:value]),
+  215 => (msg, w, ver) -> InteractiveBrokers.forward(w, :managedAccounts, PB.deserialize(:SingleString, msg)[:value]),
 
   # RECEIVE_FA
   216 => function(msg, w, ver)
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.receiveFA(FaDataType(pb[:reqId]), pb[:data])
+    InteractiveBrokers.forward(w, :receiveFA, FaDataType(pb[:reqId]), pb[:data])
   end,
 
   # HISTORICAL_DATA
@@ -272,7 +274,7 @@ const process = Dict(
                             convert(Bar, b)
                           end
 
-    w.historicalData(pb[:reqId], bars)
+    InteractiveBrokers.forward(w, :historicalData, pb[:reqId], bars)
   end,
 
   # BOND_CONTRACT_DATA
@@ -290,11 +292,11 @@ const process = Dict(
 
     contractDetails.contract = contract
 
-    w.bondContractDetails(reqId, contractDetails)
+    InteractiveBrokers.forward(w, :bondContractDetails, reqId, contractDetails)
   end,
 
   # SCANNER_PARAMETERS
-  219 => (msg, w, ver) -> w.scannerParameters(PB.deserialize(:SingleString, msg)[:value]),
+  219 => (msg, w, ver) -> InteractiveBrokers.forward(w, :scannerParameters, PB.deserialize(:SingleString, msg)[:value]),
 
   # SCANNER_DATA
   220 => function(msg, w, ver)
@@ -309,7 +311,7 @@ const process = Dict(
                                                           comboKey=ns))
                           end
 
-    w.scannerData(pb[:reqId], data)
+    InteractiveBrokers.forward(w, :scannerData, pb[:reqId], data)
   end,
 
   # TICK_OPTION_COMPUTATION
@@ -327,7 +329,7 @@ const process = Dict(
               val
           end
 
-    w.tickOptionComputation(args...)
+    InteractiveBrokers.forward(w, :tickOptionComputation, args...)
   end,
 
   # TICK_GENERIC
@@ -337,7 +339,7 @@ const process = Dict(
 
     transform(tickname, pb, :tickType)
 
-    w.tickGeneric(splat1(pb)...)
+    InteractiveBrokers.forward(w, :tickGeneric, splat1(pb)...)
   end,
 
   # TICK_STRING
@@ -347,11 +349,11 @@ const process = Dict(
 
     transform(tickname, pb, :tickType)
 
-    w.tickString(splat1(pb)...)
+    InteractiveBrokers.forward(w, :tickString, splat1(pb)...)
   end,
 
   # CURRENT_TIME
-  249 => (msg, w, ver) -> w.currentTime(PB.deserialize(:SingleInt64, msg)[:value]),
+  249 => (msg, w, ver) -> InteractiveBrokers.forward(w, :currentTime, PB.deserialize(:SingleInt64, msg)[:value]),
 
   # REAL_TIME_BARS
   250 => function(msg, w, ver)
@@ -361,7 +363,7 @@ const process = Dict(
     todouble(pb, :volume)
     todouble(pb, :wap)
 
-    w.realtimeBar(splat1(pb)...)
+    InteractiveBrokers.forward(w, :realtimeBar, splat1(pb)...)
   end,
 
   # FUNDAMENTAL_DATA
@@ -369,30 +371,30 @@ const process = Dict(
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.fundamentalData(splat1(pb)...)
+    InteractiveBrokers.forward(w, :fundamentalData, splat1(pb)...)
   end,
 
   # CONTRACT_DATA_END
-  252 => (msg, w, ver) -> w.contractDetailsEnd(PB.deserialize(:SingleInt32, msg)[:value]),
+  252 => (msg, w, ver) -> InteractiveBrokers.forward(w, :contractDetailsEnd, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # OPEN_ORDER_END
-  253 => (msg, w, ver) -> w.openOrderEnd(),
+  253 => (msg, w, ver) -> InteractiveBrokers.forward(w, :openOrderEnd),
 
   # ACCT_DOWNLOAD_END
-  254 => (msg, w, ver) -> w.accountDownloadEnd(PB.deserialize(:SingleString, msg)[:value]),
+  254 => (msg, w, ver) -> InteractiveBrokers.forward(w, :accountDownloadEnd, PB.deserialize(:SingleString, msg)[:value]),
 
   # EXECUTION_DATA_END
-  255 => (msg, w, ver) -> w.execDetailsEnd(PB.deserialize(:SingleInt32, msg)[:value]),
+  255 => (msg, w, ver) -> InteractiveBrokers.forward(w, :execDetailsEnd, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # TICK_SNAPSHOT_END
-  257 => (msg, w, ver) -> w.tickSnapshotEnd(PB.deserialize(:SingleInt32, msg)[:value]),
+  257 => (msg, w, ver) -> InteractiveBrokers.forward(w, :tickSnapshotEnd, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # MARKET_DATA_TYPE
   258 => function(msg, w, ver)
 
     pb = PB.deserialize(:MarketDataType, msg)
 
-    w.marketDataType(pb[:reqId], MarketDataType(pb[:marketDataType]))
+    InteractiveBrokers.forward(w, :marketDataType, pb[:reqId], MarketDataType(pb[:marketDataType]))
   end,
 
   # COMMISSION_REPORT
@@ -406,7 +408,7 @@ const process = Dict(
                                              yield=nothing,
                                              yieldRedemptionDate=nothing)...)
 
-    w.commissionReport(commission)
+    InteractiveBrokers.forward(w, :commissionReport, commission)
   end,
 
   # POSITION_DATA
@@ -416,32 +418,32 @@ const process = Dict(
 
     todouble(pb, :position)
 
-    w.position(splat1(pb)...)
+    InteractiveBrokers.forward(w, :position, splat1(pb)...)
   end,
 
   # POSITION_END
-  262 => (msg, w, ver) -> w.positionEnd(),
+  262 => (msg, w, ver) -> InteractiveBrokers.forward(w, :positionEnd),
 
   # ACCOUNT_SUMMARY
   263 => function(msg, w, ver)
 
     pb = PB.deserialize(:AccountSummary, msg)
 
-    w.accountSummary(splat1(pb; currency=ns)...)
+    InteractiveBrokers.forward(w, :accountSummary, splat1(pb; currency=ns)...)
   end,
 
   # ACCOUNT_SUMMARY_END
-  264 => (msg, w, ver) -> w.accountSummaryEnd(PB.deserialize(:SingleInt32, msg)[:value]),
+  264 => (msg, w, ver) -> InteractiveBrokers.forward(w, :accountSummaryEnd, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # VERIFY_MESSAGE_API
-  265 => (msg, w, ver) -> w.verifyMessageAPI(PB.deserialize(:SingleString, msg)[:value]),
+  265 => (msg, w, ver) -> InteractiveBrokers.forward(w, :verifyMessageAPI, PB.deserialize(:SingleString, msg)[:value]),
 
   # VERIFY_COMPLETED
   266 => function(msg, w, ver)
 
     pb = PB.deserialize(:VerifyCompleted, msg)
 
-    w.verifyCompleted(splat1(pb)...)
+    InteractiveBrokers.forward(w, :verifyCompleted, splat1(pb)...)
   end,
 
   # DISPLAY_GROUP_LIST
@@ -449,7 +451,7 @@ const process = Dict(
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.displayGroupList(splat1(pb)...)
+    InteractiveBrokers.forward(w, :displayGroupList, splat1(pb)...)
   end,
 
   # DISPLAY_GROUP_UPDATED
@@ -457,7 +459,7 @@ const process = Dict(
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.displayGroupUpdated(splat1(pb)...)
+    InteractiveBrokers.forward(w, :displayGroupUpdated, splat1(pb)...)
   end,
 
   # POSITION_MULTI
@@ -467,7 +469,7 @@ const process = Dict(
 
     todouble(pb, :position)
 
-    w.positionMulti(splat1(pb, (:reqId,
+    InteractiveBrokers.forward(w, :positionMulti, splat1(pb, (:reqId,
                                 :account,
                                 :modelCode,
                                 :contract,
@@ -477,36 +479,36 @@ const process = Dict(
   end,
 
   # POSITION_MULTI_END
-  272 => (msg, w, ver) -> w.positionMultiEnd(PB.deserialize(:SingleInt32, msg)[:value]),
+  272 => (msg, w, ver) -> InteractiveBrokers.forward(w, :positionMultiEnd, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # ACCOUNT_UPDATE_MULTI
   273 => function(msg, w, ver)
 
     pb = PB.deserialize(:AccountUpdateMulti, msg)
 
-    w.accountUpdateMulti(splat1(pb; modelCode=ns, currency=ns)...)
+    InteractiveBrokers.forward(w, :accountUpdateMulti, splat1(pb; modelCode=ns, currency=ns)...)
   end,
 
   # ACCOUNT_UPDATE_MULTI_END
-  274 => (msg, w, ver) -> w.accountUpdateMultiEnd(PB.deserialize(:SingleInt32, msg)[:value]),
+  274 => (msg, w, ver) -> InteractiveBrokers.forward(w, :accountUpdateMultiEnd, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # SECURITY_DEFINITION_OPTION_PARAMETER
   275 => function(msg, w, ver)
 
     pb = PB.deserialize(:SecDefOptParameter, msg)
 
-    w.securityDefinitionOptionalParameter(splat1(pb)...)
+    InteractiveBrokers.forward(w, :securityDefinitionOptionalParameter, splat1(pb)...)
   end,
 
   # SECURITY_DEFINITION_OPTION_PARAMETER_END
-  276 => (msg, w, ver) -> w.securityDefinitionOptionalParameterEnd(PB.deserialize(:SingleInt32, msg)[:value]),
+  276 => (msg, w, ver) -> InteractiveBrokers.forward(w, :securityDefinitionOptionalParameterEnd, PB.deserialize(:SingleInt32, msg)[:value]),
 
   # SOFT_DOLLAR_TIERS
   277 => function(msg, w, ver)
 
     pb = PB.deserialize(:SoftDollarTiers, msg)
 
-    w.softDollarTiers(splat1(pb; tiers=SoftDollarTier[])...)
+    InteractiveBrokers.forward(w, :softDollarTiers, splat1(pb; tiers=SoftDollarTier[])...)
   end,
 
   # FAMILY_CODES
@@ -519,7 +521,7 @@ const process = Dict(
                         FamilyCode(splat1(r; familyCode=ns))
                       end
 
-    w.familyCodes(fc)
+    InteractiveBrokers.forward(w, :familyCodes, fc)
   end,
 
   # SYMBOL_SAMPLES
@@ -532,7 +534,7 @@ const process = Dict(
                                 ContractDescription(splat1(cd; derivativeSecTypes=String[])...)
                               end : ContractDescription[]
 
-    w.symbolSamples(pb[:reqId], cds)
+    InteractiveBrokers.forward(w, :symbolSamples, pb[:reqId], cds)
   end,
 
   # MKT_DEPTH_EXCHANGES
@@ -545,7 +547,7 @@ const process = Dict(
                         DepthMktDataDescription(splat1(e; listingExch=ns, aggGroup=nothing))
                       end
 
-    w.mktDepthExchanges(mde)
+    InteractiveBrokers.forward(w, :mktDepthExchanges, mde)
   end,
 
   # TICK_REQ_PARAMS
@@ -555,7 +557,7 @@ const process = Dict(
 
     todouble(pb, :minTick)
 
-    w.tickReqParams(splat1(pb; bboExchange=ns)...)
+    InteractiveBrokers.forward(w, :tickReqParams, splat1(pb; bboExchange=ns)...)
   end,
 
   # SMART_COMPONENTS
@@ -568,7 +570,7 @@ const process = Dict(
                                       SmartComponent(splat1(s; bit=0))
                                     end : SmartComponent[]
 
-    w.smartComponents(pb[:reqId], sc)
+    InteractiveBrokers.forward(w, :smartComponents, pb[:reqId], sc)
   end,
 
   # NEWS_ARTICLE
@@ -576,7 +578,7 @@ const process = Dict(
 
     pb = PB.deserialize(:NewsArticle, msg)
 
-    w.newsArticle(splat1(pb)...)
+    InteractiveBrokers.forward(w, :newsArticle, splat1(pb)...)
   end,
 
   # TICK_NEWS
@@ -584,7 +586,7 @@ const process = Dict(
 
     pb = PB.deserialize(:TickNews, msg)
 
-    w.tickNews(splat1(pb)...)
+    InteractiveBrokers.forward(w, :tickNews, splat1(pb)...)
   end,
 
   # NEWS_PROVIDERS
@@ -592,7 +594,7 @@ const process = Dict(
 
     pb = PB.deserialize(:NewsProviders, msg)
 
-    w.newsProviders(convert(VNewsProvider, splat1(pb; newsProviders=VNewsProvider())...))
+    InteractiveBrokers.forward(w, :newsProviders, convert(VNewsProvider, splat1(pb; newsProviders=VNewsProvider())...))
   end,
 
   # HISTORICAL_NEWS
@@ -600,7 +602,7 @@ const process = Dict(
 
     pb = PB.deserialize(:HistoricalNews, msg)
 
-    w.historicalNews(splat1(pb)...)
+    InteractiveBrokers.forward(w, :historicalNews, splat1(pb)...)
   end,
 
   # HISTORICAL_NEWS_END
@@ -608,7 +610,7 @@ const process = Dict(
 
     pb = PB.deserialize(:HistoricalNewsEnd, msg)
 
-    w.historicalNewsEnd(splat1(pb)...)
+    InteractiveBrokers.forward(w, :historicalNewsEnd, splat1(pb)...)
   end,
 
   # HEAD_TIMESTAMP
@@ -616,7 +618,7 @@ const process = Dict(
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.headTimestamp(splat1(pb)...)
+    InteractiveBrokers.forward(w, :headTimestamp, splat1(pb)...)
   end,
 
   # HISTOGRAM_DATA
@@ -631,7 +633,7 @@ const process = Dict(
                             convert(HistogramEntry, d)
                           end
 
-    w.histogramData(pb[:reqId], data)
+    InteractiveBrokers.forward(w, :histogramData, pb[:reqId], data)
   end,
 
   # HISTORICAL_DATA_UPDATE
@@ -644,7 +646,7 @@ const process = Dict(
     reqId,
     bar::Bar = splat1(pb)
 
-    w.historicalDataUpdate(reqId, bar)
+    InteractiveBrokers.forward(w, :historicalDataUpdate, reqId, bar)
   end,
 
   # REROUTE_MKT_DATA_REQ
@@ -652,7 +654,7 @@ const process = Dict(
 
     pb = PB.deserialize(:Reroute, msg)
 
-    w.rerouteMktDataReq(splat1(pb)...)
+    InteractiveBrokers.forward(w, :rerouteMktDataReq, splat1(pb)...)
   end,
 
   # REROUTE_MKT_DEPTH_REQ
@@ -660,7 +662,7 @@ const process = Dict(
 
     pb = PB.deserialize(:Reroute, msg)
 
-    w.rerouteMktDepthReq(splat1(pb)...)
+    InteractiveBrokers.forward(w, :rerouteMktDepthReq, splat1(pb)...)
   end,
 
   # MARKET_RULE
@@ -671,7 +673,7 @@ const process = Dict(
     id,
     priceIncrements::VPriceIncrement = splat1(pb)
 
-    w.marketRule(id, priceIncrements)
+    InteractiveBrokers.forward(w, :marketRule, id, priceIncrements)
   end,
 
   # PNL
@@ -679,7 +681,7 @@ const process = Dict(
 
     pb = PB.deserialize(:PnL, msg)
 
-    w.pnl(splat1(pb)...)
+    InteractiveBrokers.forward(w, :pnl, splat1(pb)...)
   end,
 
   # PNL_SINGLE
@@ -689,7 +691,7 @@ const process = Dict(
 
     todouble(pb, :position)
 
-    w.pnlSingle(splat1(pb; dailyPnL=nothing, unrealizedPnL=nothing, realizedPnL=nothing)...)
+    InteractiveBrokers.forward(w, :pnlSingle, splat1(pb; dailyPnL=nothing, unrealizedPnL=nothing, realizedPnL=nothing)...)
   end,
 
   # HISTORICAL_TICKS
@@ -704,7 +706,7 @@ const process = Dict(
                                     convert(Tick, t)
                                   end : Tick[]
 
-    w.historicalTicks(pb[:reqId], ticks, pb[:done])
+    InteractiveBrokers.forward(w, :historicalTicks, pb[:reqId], ticks, pb[:done])
   end,
 
   # HISTORICAL_TICKS_BID_ASK
@@ -720,7 +722,7 @@ const process = Dict(
                                     TickBidAsk(splat1(t))
                                   end : TickBidAsk[]
 
-    w.historicalTicksBidAsk(pb[:reqId], ticks, pb[:done])
+    InteractiveBrokers.forward(w, :historicalTicksBidAsk, pb[:reqId], ticks, pb[:done])
   end,
 
   # HISTORICAL_TICKS_LAST
@@ -736,7 +738,7 @@ const process = Dict(
                                                        specialConditions=ns))
                                   end : TickLast[]
 
-    w.historicalTicksLast(pb[:reqId], ticks, pb[:done])
+    InteractiveBrokers.forward(w, :historicalTicksLast, pb[:reqId], ticks, pb[:done])
   end,
 
   # TICK_BY_TICK
@@ -753,7 +755,7 @@ const process = Dict(
 
       todouble(tick, :size)
 
-      w.tickByTickAllLast(reqId, tickType, splat1(tick, (:time,
+      InteractiveBrokers.forward(w, :tickByTickAllLast, reqId, tickType, splat1(tick, (:time,
                                                          :price,
                                                          :size,
                                                          :attribs,
@@ -768,7 +770,7 @@ const process = Dict(
       todouble(tick, :bidSize)
       todouble(tick, :askSize)
 
-      w.tickByTickBidAsk(reqId, splat1(tick, (:time,
+      InteractiveBrokers.forward(w, :tickByTickBidAsk, reqId, splat1(tick, (:time,
                                               :bidPrice,
                                               :askPrice,
                                               :bidSize,
@@ -778,7 +780,7 @@ const process = Dict(
 
       tick = pb[:tickMidPoint]
 
-      w.tickByTickMidPoint(reqId, tick[:time], tick[:price])
+      InteractiveBrokers.forward(w, :tickByTickMidPoint, reqId, tick[:time], tick[:price])
     else
 
       @warn "TICK_BY_TICK: unknown ticktype" T=ticktype
@@ -790,7 +792,7 @@ const process = Dict(
 
     pb = PB.deserialize(:OrderBound, msg)
 
-    w.orderBound(splat1(pb)...)
+    InteractiveBrokers.forward(w, :orderBound, splat1(pb)...)
   end,
 
   # COMPLETED_ORDER
@@ -823,18 +825,18 @@ const process = Dict(
       end
     end
 
-    w.completedOrder(contract, order, orderState)
+    InteractiveBrokers.forward(w, :completedOrder, contract, order, orderState)
   end,
 
   # COMPLETED_ORDERS_END
-  302 => (msg, w, ver) -> w.completedOrdersEnd(),
+  302 => (msg, w, ver) -> InteractiveBrokers.forward(w, :completedOrdersEnd),
 
   # REPLACE_FA_END
   303 => function(msg, w, ver)
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.replaceFAEnd(splat1(pb)...)
+    InteractiveBrokers.forward(w, :replaceFAEnd, splat1(pb)...)
   end,
 
   # WSH_META_DATA
@@ -842,7 +844,7 @@ const process = Dict(
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.wshMetaData(splat1(pb)...)
+    InteractiveBrokers.forward(w, :wshMetaData, splat1(pb)...)
   end,
 
   # WSH_EVENT_DATA
@@ -850,7 +852,7 @@ const process = Dict(
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.wshEventData(splat1(pb)...)
+    InteractiveBrokers.forward(w, :wshEventData, splat1(pb)...)
   end,
 
   # HISTORICAL_SCHEDULE
@@ -858,7 +860,7 @@ const process = Dict(
 
     pb = PB.deserialize(:HistoricalSchedule, msg)
 
-    w.historicalSchedule(splat1(pb)...)
+    InteractiveBrokers.forward(w, :historicalSchedule, splat1(pb)...)
   end,
 
   # USER_INFO
@@ -866,7 +868,7 @@ const process = Dict(
 
     pb = PB.deserialize(:StringData, msg)
 
-    w.userInfo(splat1(pb; data=ns)...)
+    InteractiveBrokers.forward(w, :userInfo, splat1(pb; data=ns)...)
   end,
 
   # HISTORICAL_DATA_END
@@ -874,7 +876,7 @@ const process = Dict(
 
     pb = PB.deserialize(:HistoricalDataEnd, msg)
 
-    w.historicalDataEnd(splat1(pb)...)
+    InteractiveBrokers.forward(w, :historicalDataEnd, splat1(pb)...)
   end,
 
   # CURRENT_TIME_IN_MILLIS
@@ -882,7 +884,7 @@ const process = Dict(
 
     pb = PB.deserialize(:SingleInt64, msg)
 
-    w.currentTimeInMillis(pb[:value])
+    InteractiveBrokers.forward(w, :currentTimeInMillis, pb[:value])
   end
 
 )

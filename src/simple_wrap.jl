@@ -250,17 +250,17 @@ function simple_wrap()
                            something(realizedPnL, "NA"),   " ",
                            value),
   
-      historicalTicks= function(reqId::Int, ticks::VHistoricalTick, done::Bool)
+      historicalTicks= function(reqId::Int, ticks::VTick, done::Bool)
                          d[:historyticks] = ticks
                          println("historicalTicks: $reqId $done $(length(ticks))")
                        end,
   
-      historicalTicksBidAsk= function(reqId::Int, ticks::VHistoricalTickBidAsk, done::Bool)
+      historicalTicksBidAsk= function(reqId::Int, ticks::VTickBidAsk, done::Bool)
                                d[:historyticksbidask] = ticks
                                println("historicalTicksBidAsk: $reqId $done $(length(ticks))")
                              end,
   
-      historicalTicksLast= function(reqId::Int, ticks::VHistoricalTickLast, done::Bool)
+      historicalTicksLast= function(reqId::Int, ticks::VTickLast, done::Bool)
                              d[:historytickslast] = ticks
                              println("historicalTicksLast: $reqId $done $(length(ticks))")
                            end,
