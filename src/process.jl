@@ -108,15 +108,12 @@ const process = Dict(
 
     for oa ∈ get(pb[:orderState], :orderAllocations, ()),
         n ∈ (:position,
-              :positionDesired,
-              :positionAfter,
-              :desiredAllocQty,
-              :allowedAllocQty)
+             :positionDesired,
+             :positionAfter,
+             :desiredAllocQty,
+             :allowedAllocQty)
       todouble(oa, n)
     end
-
-    o[:usePriceMgmtAlgo] ∈ (0, 1) ||
-      @warn "unexpected usePriceMgmtAlgo" U=o[:usePriceMgmtAlgo]
 
     oid,
     contract::Contract,
@@ -175,7 +172,7 @@ const process = Dict(
     pb = PB.deserialize(:ContractData, msg)
 
     cd = pb[:contractDetails]
-    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement))
+    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement, :minAlgoSize))
     transform(funddist, cd, :fundDistributionPolicyIndicator)
     transform(fundtype, cd, :fundAssetType)
 
@@ -284,7 +281,7 @@ const process = Dict(
 
     cd = pb[:contractDetails]
 
-    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement))
+    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement, :minAlgoSize))
 
     reqId,
     contract::Contract,
@@ -803,9 +800,6 @@ const process = Dict(
     # Conversions
     todouble(pb[:order], :totalQuantity)
     todouble(pb[:order], :filledQuantity)
-
-    pb[:order][:usePriceMgmtAlgo] ∈ (0, 1) ||
-      @warn "unexpected usePriceMgmtAlgo" U=pb[:order][:usePriceMgmtAlgo]
 
     contract::Contract,
     order::Order,
