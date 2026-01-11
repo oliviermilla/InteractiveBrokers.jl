@@ -17,8 +17,8 @@
   @test fieldname(InteractiveBrokers.Contract, 17) === :issuerId
   @test fieldname(InteractiveBrokers.Contract, 18) === :lastTradeDate
 
-  @test fieldname(InteractiveBrokers.ContractDetails, 44) === :fundName
-  @test fieldname(InteractiveBrokers.ContractDetails, 58) === :fundBlueSkyTerritories
+  @test fieldname(InteractiveBrokers.ContractDetails, 45) === :fundName
+  @test fieldname(InteractiveBrokers.ContractDetails, 59) === :fundBlueSkyTerritories
 
   @test fieldname(InteractiveBrokers.Order, 79) === :account
   @test fieldname(InteractiveBrokers.Order, 125) === :parentPermId

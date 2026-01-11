@@ -86,7 +86,8 @@ const callbacks = [:tickPrice,
                    :historicalSchedule,
                    :userInfo,
                    :historicalDataEnd,
-                   :currentTimeInMillis]
+                   :currentTimeInMillis,
+                   :configResponseProtoBuf]
 
 abstract type AbstractIBCallbackWrapper end
 
