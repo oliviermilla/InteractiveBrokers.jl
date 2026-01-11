@@ -13,7 +13,8 @@ import ..AbstractCondition,
        ..ScannerSubscription,
        ..WshEventData,
        ..PB,
-       ..maptopb
+       ..maptopb,
+       ..maptopb!
 
 
 function sendmsg(ib, msgid::Int, msg::Union{PB.Message,Nothing}=nothing)
@@ -81,15 +82,52 @@ function placeOrder(ib::Connection, id::Int, contract::Contract, order::Order)
                       :filledQuantity,
                       :refFuturesConId,
                       :shareholder,
-                      :routeMarketableToBbo,
                       :parentPermId,
-                      :totalQuantity))
+
+                      # Require separate handling
+                      :totalQuantity,        # Decimal
+                      :routeMarketableToBbo, # Three-state boolean
+                      :usePriceMgmtAlgo,     # Three-state boolean
+                      :seekPriceImprovement, # Three-state boolean
+                      :slOrderId,            # Attached Orders
+                      :slOrderType,          # Attached Orders
+                      :ptOrderId,            # Attached Orders
+                      :ptOrderType))         # Attached Orders
 
   o[:totalQuantity] = string(order.totalQuantity)
 
+  for n ∈ (:routeMarketableToBbo, :usePriceMgmtAlgo, :seekPriceImprovement)
+    val = getfield(order, n)
+
+    isnothing(val) || (o[n] = Int(val))
+  end
+
+  if ib.version < Client.ADDITIONAL_ORDER_PARAMS_1
+    for n ∈ (:deactivate, :postOnly, :allowPreOpen, :ignoreOpenAuction)
+      PB.has(o, n) && error("Order parameter :$n not supported")
+    end
+
+  end
+
+  if ib.version < Client.ADDITIONAL_ORDER_PARAMS_2
+    for n ∈ (:routeMarketableToBbo, :seekPriceImprovement, :whatIfType)
+      PB.has(o, n) && error("Order parameter :$n not supported")
+    end
+  end
+
+  ao = maptopb!(PB.Message(:AttachedOrders),
+                (n => getfield(order, n) for n ∈ (:slOrderId,
+                                                  :slOrderType,
+                                                  :ptOrderId,
+                                                  :ptOrderType)))
+
+  ib.version < Client.ATTACHED_ORDERS && length(ao) > 0 &&
+    error("Attached Orders parameters not supported")
+
   msg = PB.Message(:PlaceOrderRequest; orderId=id,
                                        contract=c,
-                                       order=o)
+                                       order=o,
+                                       attachedOrders=ao)
 
   sendmsg(ib, msgid, msg)
 end
@@ -431,6 +469,7 @@ cancelContractData(ib::Connection, reqId::Int) = req_simple(ib, 106, reqId) ### 
 
 cancelHistoricalTick(ib::Connection, reqId::Int) = req_simple(ib, 107, reqId) ### CANCEL_HISTORICAL_TICKS
 
+reqConfig(ib::Connection, reqId::Int) = req_simple(ib, 108, reqId) ### REQ_CONFIG
 
 # Exports
 export reqMktData,
@@ -515,5 +554,6 @@ export reqMktData,
        reqUserInfo,
        reqCurrentTimeInMillis,
        cancelContractData,
-       cancelHistoricalTick
+       cancelHistoricalTick,
+       reqConfig
 end
