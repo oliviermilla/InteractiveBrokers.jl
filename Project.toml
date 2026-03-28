@@ -6,6 +6,9 @@ version = "0.34"
 [deps]
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 
+[weakdeps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+
 [workspace]
 projects = ["test"]
 
