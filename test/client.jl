@@ -19,7 +19,7 @@
   bo = IOBuffer()
   InteractiveBrokers.Client.write_one(bo, buf)
 
-  @test buf.size == 0
+  @test buf.size == 11
   @test String(take!(bo)) == InteractiveBrokers.Client.API_SIGN * "\0\0\0\x03ABC"
 
   # Round trip
@@ -36,6 +36,6 @@
   @test id == 123
   @test String(m) == "ABC"
   @test eof(bo)
-  @test bo.size == 0
+  @test bo.size == 11
 
 end
