@@ -172,7 +172,8 @@ const process = Dict(
     pb = PB.deserialize(:ContractData, msg)
 
     cd = pb[:contractDetails]
-    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement, :minAlgoSize))
+    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement,
+                        :minAlgoSize, :lastPricePrecision, :lastSizePrecision))
     transform(funddist, cd, :fundDistributionPolicyIndicator)
     transform(fundtype, cd, :fundAssetType)
 
@@ -281,7 +282,8 @@ const process = Dict(
 
     cd = pb[:contractDetails]
 
-    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement, :minAlgoSize))
+    todouble.(Ref(cd), (:minTick, :minSize, :sizeIncrement, :suggestedSizeIncrement,
+                        :minAlgoSize, :lastPricePrecision, :lastSizePrecision))
 
     reqId,
     contract::Contract,
@@ -541,7 +543,8 @@ const process = Dict(
 
     mde = map(pb[:depthMktDataDescriptions]) do e
 
-                        DepthMktDataDescription(splat1(e; listingExch=ns, aggGroup=nothing))
+                        DepthMktDataDescription(splat1(e; listingExch=ns,
+                                                          aggGroup=nothing))
                       end
 
     InteractiveBrokers.forward(w, :mktDepthExchanges, mde)
@@ -553,8 +556,17 @@ const process = Dict(
     pb = PB.deserialize(:TickReqParams, msg)
 
     todouble(pb, :minTick)
+    todouble(pb, :lastPricePrecision)
+    todouble(pb, :lastSizePrecision)
 
-    InteractiveBrokers.forward(w, :tickReqParams, splat1(pb; bboExchange=ns)...)
+    # TODO: expose :lastPricePrecision and :lastSizePrecision
+    InteractiveBrokers.forward(w, :tickReqParams,splat1(pb, (:reqId,
+                                :minTick,
+                                :bboExchange,
+                                :snapshotPermissions);
+                           bboExchange=ns,
+                           lastPricePrecision=nothing,
+                           lastSizePrecision=nothing)...)
   end,
 
   # SMART_COMPONENTS
@@ -688,7 +700,9 @@ const process = Dict(
 
     todouble(pb, :position)
 
-    InteractiveBrokers.forward(w, :pnlSingle, splat1(pb; dailyPnL=nothing, unrealizedPnL=nothing, realizedPnL=nothing)...)
+    InteractiveBrokers.forward(w, :pnlSingle, splat1(pb; dailyPnL=nothing,
+                           unrealizedPnL=nothing,
+                           realizedPnL=nothing)...)
   end,
 
   # HISTORICAL_TICKS
@@ -887,6 +901,14 @@ const process = Dict(
     pb = PB.deserialize(:ConfigResponse, msg)
     
     w.configResponseProtoBuf(pb)
+  end,
+
+  # UPDATE_CONFIG_RESPONSE
+  311 => function(msg, w, ver)
+
+    pb = PB.deserialize(:UpdateConfigResponse, msg)
+
+    w.updateConfigResponseProtoBuf(pb)
   end
 
 )
