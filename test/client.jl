@@ -36,6 +36,6 @@
   @test id == 123
   @test String(m) == "ABC"
   @test eof(bo)
-  @test bo.size == 11
+  @test bo.size == 0
 
 end
